@@ -1,0 +1,345 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write project files
+        run: |
+          mkdir -p PlaceLog && cd PlaceLog
+          mkdir -p app/src/main/java/com/example/placelog app/src/main/res/values app/src/main/res/layout
+          cat > settings.gradle.kts <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
+          rootProject.name = "PlaceLog"
+          include(":app")
+          EOF
+          cat > build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.7.3" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+          }
+          EOF
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          EOF
+          cat > app/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+
+          android {
+              namespace = "com.example.placelog"
+              compileSdk = 35
+
+              defaultConfig {
+                  applicationId = "com.example.placelog"
+                  minSdk = 30
+                  targetSdk = 32
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+          }
+
+          dependencies {
+              implementation("androidx.core:core:1.13.1")
+              implementation("com.google.android.gms:play-services-location:21.3.0")
+          }
+          EOF
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="PlaceLog"
+                  android:theme="@style/AppTheme"
+                  android:supportsRtl="true">
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <receiver android:name=".GeofenceReceiver" android:exported="false" />
+                  <receiver android:name=".BootReceiver" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.BOOT_COMPLETED" />
+                          <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                      </intent-filter>
+                  </receiver>
+              </application>
+          </manifest>
+          EOF
+          cat > app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:colorAccent">#00695C</item>
+                  <item name="android:statusBarColor">#004D40</item>
+                  <item name="android:navigationBarColor">#004D40</item>
+                  <item name="android:windowLightStatusBar">false</item>
+                  <item name="android:windowActionModeOverlay">true</item>
+              </style>
+          </resources>
+          EOF
+          cat > app/src/main/res/layout/activity_main.xml <<'EOF'
+          <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent" android:layout_height="match_parent"
+              android:background="#F4F7F6" android:fillViewport="true">
+              <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                  android:orientation="vertical" android:padding="20dp">
+                  <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                      android:text="PlaceLog" android:textColor="#004D40" android:textSize="30sp" android:textStyle="bold" />
+                  <TextView android:id="@+id/statusText" android:layout_width="match_parent" android:layout_height="wrap_content"
+                      android:text="Set your workplace to begin." android:textSize="15sp" android:textColor="#33423F" android:paddingTop="6dp" android:paddingBottom="16dp" />
+                  <Button android:id="@+id/setPlaceButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Set this location as my place" />
+                  <Button android:id="@+id/startButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Start automatic tracking" />
+                  <Button android:id="@+id/stopButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Stop tracking" />
+                  <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Choose a date" android:textStyle="bold" android:textSize="18sp" android:textColor="#18332F" android:paddingTop="20dp" />
+                  <CalendarView android:id="@+id/calendarView" android:layout_width="match_parent" android:layout_height="wrap_content" android:weekNumberColor="#00695C" />
+                  <TextView android:id="@+id/selectedDateText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Selected day" android:textStyle="bold" android:textSize="18sp" android:textColor="#004D40" android:paddingTop="12dp" />
+                  <TextView android:id="@+id/recordsText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="No records for this date yet." android:textSize="16sp" android:textColor="#263633" android:paddingTop="8dp" android:paddingBottom="24dp" />
+                  <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                      android:text="Tip: tap ‘Set this location’ while you are at the place. Allow location access all the time and disable battery restrictions for PlaceLog if your phone delays events. Location events can be approximate and may arrive a few minutes late."
+                      android:textSize="12sp" android:textColor="#60716D" android:paddingTop="8dp" />
+              </LinearLayout>
+          </ScrollView>
+          EOF
+          cat > app/src/main/java/com/example/placelog/GeoStore.kt <<'EOF'
+          package com.example.placelog
+
+          import android.content.Context
+          import org.json.JSONArray
+          import org.json.JSONObject
+
+          object GeoStore {
+              private const val PREFS = "placelog_store"
+              private const val EVENTS = "events"
+              private const val LAT = "latitude"
+              private const val LON = "longitude"
+              private const val SET = "place_set"
+              private const val ACTIVE = "tracking_active"
+
+              data class Event(val timestamp: Long, val type: String)
+
+              private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+              fun savePlace(context: Context, lat: Double, lon: Double) = prefs(context).edit()
+                  .putString(LAT, lat.toString()).putString(LON, lon.toString()).putBoolean(SET, true).apply()
+              fun hasPlace(context: Context) = prefs(context).getBoolean(SET, false)
+              fun latitude(context: Context) = prefs(context).getString(LAT, "0")!!.toDouble()
+              fun longitude(context: Context) = prefs(context).getString(LON, "0")!!.toDouble()
+              fun setActive(context: Context, active: Boolean) = prefs(context).edit().putBoolean(ACTIVE, active).apply()
+              fun isActive(context: Context) = prefs(context).getBoolean(ACTIVE, false)
+
+              @Synchronized fun addEvent(context: Context, timestamp: Long, type: String) {
+                  val p = prefs(context)
+                  val array = try { JSONArray(p.getString(EVENTS, "[]")) } catch (_: Exception) { JSONArray() }
+                  // Ignore duplicate transition events of the same type within 2 minutes.
+                  if (array.length() > 0) {
+                      val last = array.optJSONObject(array.length() - 1)
+                      if (last != null && last.optString("type") == type && kotlin.math.abs(timestamp - last.optLong("timestamp")) < 120_000L) return
+                  }
+                  array.put(JSONObject().put("timestamp", timestamp).put("type", type))
+                  p.edit().putString(EVENTS, array.toString()).apply()
+              }
+
+              fun events(context: Context): List<Event> {
+                  val array = try { JSONArray(prefs(context).getString(EVENTS, "[]")) } catch (_: Exception) { JSONArray() }
+                  return (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let { Event(it.optLong("timestamp"), it.optString("type")) } }.sortedBy { it.timestamp }
+              }
+          }
+          EOF
+          cat > app/src/main/java/com/example/placelog/GeofenceReceiver.kt <<'EOF'
+          package com.example.placelog
+
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.PendingIntent
+          import android.content.BroadcastReceiver
+          import android.content.Context
+          import android.content.Intent
+          import android.os.Build
+          import com.google.android.gms.location.Geofence
+          import com.google.android.gms.location.GeofencingEvent
+
+          class GeofenceReceiver : BroadcastReceiver() {
+              override fun onReceive(context: Context, intent: Intent) {
+                  val event = GeofencingEvent.fromIntent(intent) ?: return
+                  if (event.hasError()) return
+                  val transition = event.geofenceTransition
+                  val type = when (transition) {
+                      Geofence.GEOFENCE_TRANSITION_ENTER -> "ARRIVED"
+                      Geofence.GEOFENCE_TRANSITION_EXIT -> "LEFT"
+                      else -> return
+                  }
+                  GeoStore.addEvent(context, System.currentTimeMillis(), type)
+                  notifyUser(context, type)
+              }
+
+              @Suppress("DEPRECATION")
+              private fun notifyUser(context: Context, type: String) {
+                  val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                  val channelId = "placelog_events"
+                  if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(channelId, "PlaceLog events", NotificationManager.IMPORTANCE_DEFAULT))
+                  val message = if (type == "ARRIVED") "Arrival recorded" else "Departure recorded"
+                  val builder = if (Build.VERSION.SDK_INT >= 26) android.app.Notification.Builder(context, channelId) else android.app.Notification.Builder(context)
+                  val open = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0)
+                  builder.setSmallIcon(android.R.drawable.ic_menu_mylocation).setContentTitle("PlaceLog").setContentText(message).setContentIntent(open).setAutoCancel(true)
+                  manager.notify(if (type == "ARRIVED") 101 else 102, builder.build())
+              }
+          }
+          EOF
+          cat > app/src/main/java/com/example/placelog/GeofenceHelper.kt <<'EOF'
+          package com.example.placelog
+
+          import android.app.PendingIntent
+          import android.content.Context
+          import android.content.Intent
+          import android.os.Build
+          import com.google.android.gms.location.Geofence
+          import com.google.android.gms.location.GeofencingRequest
+          import com.google.android.gms.location.LocationServices
+
+          object GeofenceHelper {
+              private const val REQUEST_CODE = 77
+              private const val RADIUS_METERS = 150f
+
+              /** Must stay identical between add and remove so removeGeofences() matches. */
+              fun pendingIntent(context: Context): PendingIntent {
+                  val intent = Intent(context, GeofenceReceiver::class.java)
+                  // Geofencing needs a mutable PendingIntent on Android 12+. Before that, PendingIntents are mutable by default.
+                  val mutability = if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
+                  return PendingIntent.getBroadcast(context, REQUEST_CODE, intent, PendingIntent.FLAG_UPDATE_CURRENT or mutability)
+              }
+
+              /** Registers the saved place as a geofence. [onResult] is called with (success, errorMessage). */
+              fun register(context: Context, onResult: (Boolean, String?) -> Unit) {
+                  val app = context.applicationContext
+                  if (!GeoStore.hasPlace(app)) { onResult(false, "No place saved"); return }
+                  val geofence = Geofence.Builder().setRequestId("primary_place")
+                      .setCircularRegion(GeoStore.latitude(app), GeoStore.longitude(app), RADIUS_METERS)
+                      .setExpirationDuration(Geofence.NEVER_EXPIRE)
+                      .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
+                      .setLoiteringDelay(60_000).build()
+                  val request = GeofencingRequest.Builder().setInitialTrigger(0).addGeofence(geofence).build()
+                  try {
+                      LocationServices.getGeofencingClient(app).addGeofences(request, pendingIntent(app))
+                          .addOnSuccessListener { onResult(true, null) }
+                          .addOnFailureListener { onResult(false, it.localizedMessage) }
+                  } catch (_: SecurityException) {
+                      onResult(false, "Location permission is missing")
+                  }
+              }
+          }
+          EOF
+          cat > app/src/main/java/com/example/placelog/BootReceiver.kt <<'EOF'
+          package com.example.placelog
+
+          import android.content.BroadcastReceiver
+          import android.content.Context
+          import android.content.Intent
+
+          /** Android removes geofences on reboot and app update, so re-register them if tracking was on. */
+          class BootReceiver : BroadcastReceiver() {
+              override fun onReceive(context: Context, intent: Intent) {
+                  val action = intent.action
+                  if (action != Intent.ACTION_BOOT_COMPLETED && action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+                  if (!GeoStore.isActive(context) || !GeoStore.hasPlace(context)) return
+                  val pending = goAsync()
+                  GeofenceHelper.register(context) { ok, _ ->
+                      // If re-registering failed, show tracking as off so the app doesn't claim something untrue.
+                      if (!ok) GeoStore.setActive(context, false)
+                      pending.finish()
+                  }
+              }
+          }
+          EOF
+          cat > app/src/main/java/com/example/placelog/MainActivity.kt <<'EOF'
+          package com.example.placelog
+
+          import android.Manifest
+          import android.app.Activity
+          import android.app.AlertDialog
+          import android.app.PendingIntent
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.location.Location
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Bundle
+          import android.provider.Settings
+          import android.widget.Button
+          import android.widget.CalendarView
+          import android.widget.TextView
+          import android.widget.Toast
+          import androidx.core.app.ActivityCompat
+          import androidx.core.content.ContextCompat
+          import com.google.android.gms.location.GeofencingClient
+          import com.google.android.gms.location.LocationServices
+          import com.google.android.gms.location.Priority
+          import com.google.android.gms.tasks.CancellationTokenSource
+          import java.text.SimpleDateFormat
+          import java.util.Calendar
+          import java.util.Date
+          import java.util.Locale
+
+          class MainActivity : Activity() {
+              private lateinit var geofencingClient: GeofencingClient
+              private lateinit var statusText: TextView
+              private lateinit var selectedDateText: TextView
+              private lateinit var recordsText: TextView
+              private lateinit var calendarView: CalendarView
+              private var selectedDateStart: Long = dayStart(System.currentTimeMillis())
+              private val permissionRequest = 601
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_main)
+                  geofencingClient = LocationServices.getGeofencingClient(this)
+                  statusText = findViewById(R.id.statusText)
+                  selectedDateText = findViewById(R.id.selectedDateText)
+                  recordsText = findViewById(R.id.recordsText)
+                  calendarView = findViewById(R.id.calendarView)
+                  findViewById<Button>(R.id.setPlaceButton).setOnClickListener { checkPermissionsThenSetPlace() }
+                  findViewById<Button>(R.id.startButton).setOnClickListener { checkPermissionsThenStart() }
+                  findViewById<Button>(R.id.stopButton).setOnClickListener { stopTracking() }
+                  calendarView.setOnDateChangeListener { _, year, month, day ->
+                      val c = Calendar.getInstance().apply { set(year, month, day, 0, 0, 0); set(Calendar.MILLISECOND, 0) }
+                      selectedDateStart = c.timeInMillis
+                      refreshRecords()
+                  }
+                  refreshAll()
+              }
+
+              private fun checkPermissionsThenSetPlace() {
+                  if (!hasForegroundLocation()) { requestLocationPermissions(); return }
+                  val client = LocationServices.getFusedLocationProviderClient(this)
+                  try {
+                      client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token)
+                          .addOnSuccessListener { location ->
+                              if (location == null) { toast("Couldn't get location. Turn on Location and try again."); return@addOnSuccessListener }
+                              GeoStore.savePlace(this, location.latitude, location.longitude)
+                              toast("Place saved. Now start tracking.")
+               
